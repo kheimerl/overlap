@@ -109,9 +109,12 @@ function showCreate() {
     try {
       core.validateMeta(meta);
       const key = core.newEventKey();
-      await api.create(await core.deriveEvent(key), meta, POW_BITS);
-      remember(key, meta.title);
-      location.hash = key;
+      const ev = await core.deriveEvent(key);
+      await api.create(ev, meta, POW_BITS);
+      // pushState doesn't fire hashchange, so we skip the reload and the round trip
+      // to fetch back what we just wrote. Back still returns to this form.
+      history.pushState(null, '', '#' + key);
+      renderEvent(key, ev, { meta, responses: [] });
     } catch (err) {
       setStatus(status, `Couldn't create the event: ${err.message}`, true);
       $('create-btn').disabled = false;
@@ -197,7 +200,10 @@ async function showEvent(key) {
   } catch {
     return fail("This event's details couldn't be decrypted. The link may be incomplete.");
   }
+  renderEvent(key, ev, state);
+}
 
+function renderEvent(key, ev, state) {
   const { meta } = state;
   const spd = core.slotsPerDay(meta);
   const n = core.slotCount(meta);
