@@ -6,7 +6,7 @@ import * as core from '../js/core.js';
 import { createApi, openEvent } from '../js/api.js';
 import { loadBackend } from '../dev/gas-shim.mjs';
 
-const POW_BITS = 16;
+const POW_BITS = 12;  // matches CONFIG.POW_BITS in Code.gs
 const META = { title: 'Lab meeting', dates: ['2026-10-05', '2026-10-06'], start: 540, end: 720, step: 30, tz: 'America/Los_Angeles' };
 const N = core.slotCount(META);
 
@@ -61,6 +61,28 @@ test('create, respond, update, read back', async () => {
   // The server only ever saw ciphertext.
   const stored = JSON.stringify([...gas.sheets.values()].map(s => s.cells));
   assert.ok(!stored.includes('Lab meeting') && !stored.includes('Ada') && !stored.includes('Grace'));
+});
+
+test('"if needed" round-trips, and older responses without it still load', async () => {
+  const { api } = setup();
+  const ev = await newEvent(api);
+  const { YES, IF_NEEDED, NO } = core;
+  const states = Array.from({ length: N }, (_, i) => [NO, YES, IF_NEEDED][i % 3]);
+  await api.respond(ev, await core.participantSecret(ev, 'Ada', ''), { name: 'Ada', ...core.encodeAvail(states) });
+  await respond(api, ev, 'Old client', '', bits(0, 4));  // { avail } only, as saved before this feature
+  const { responses } = await openEvent(ev, await api.load(ev));
+  const byName = Object.fromEntries(responses.map(r => [r.name, r.avail]));
+  assert.deepEqual(byName['Ada'], states);
+  assert.deepEqual(byName['Old client'], bits(0, 4));
+});
+
+test('largest possible response fits the server size limit', async () => {
+  const { api } = setup();
+  const ev = await newEvent(api);
+  const big = { ...META, dates: Array.from({ length: core.MAX_DATES }, (_, i) => `2026-12-${String(i % 28 + 1).padStart(2, '0')}`), start: 0, end: 1440, step: 15 };
+  const states = Array.from({ length: core.slotCount(big) }, (_, i) => i % 3);
+  const blob = await core.encryptJSON(ev, 'response', { name: 'x'.repeat(core.MAX_NAME), ...core.encodeAvail(states) });
+  assert.ok(blob.length <= 4000, `blob is ${blob.length} chars`);
 });
 
 test('writes require the link-derived token', async () => {

@@ -12,7 +12,7 @@
  */
 
 const CONFIG = {
-  POW_BITS: 16,                // must match js/config.js
+  POW_BITS: 12,                // minimum accepted; js/config.js must not ask for less
   MAX_META: 6000,              // chars of encrypted event details
   MAX_BLOB: 4000,              // chars of one encrypted response
   MAX_PARTICIPANTS: 100,       // per event

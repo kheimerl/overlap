@@ -106,9 +106,21 @@ export function validateMeta(m) {
 export const slotsPerDay = m => (m.end - m.start) / m.step;
 export const slotCount = m => m.dates.length * slotsPerDay(m);
 
+// Per-slot states in decoded responses.
+export const NO = 0, YES = 1, IF_NEEDED = 2;
+
+// Responses carry one bitset for "available" and one for "if needed";
+// older responses without `maybe` decode as available/unavailable only.
+export function encodeAvail(states) {
+  return { avail: packBits(states.map(v => v === YES)), maybe: packBits(states.map(v => v === IF_NEEDED)) };
+}
+
 export function validateResponse(r, meta) {
   if (!r || typeof r.name !== 'string' || !r.name.trim() || r.name.length > MAX_NAME) throw new Error('bad name');
-  return { name: r.name.trim(), avail: unpackBits(r.avail, slotCount(meta)) };
+  const n = slotCount(meta);
+  const yes = unpackBits(r.avail, n);
+  const maybe = r.maybe === undefined ? null : unpackBits(r.maybe, n);
+  return { name: r.name.trim(), avail: yes.map((v, i) => v ? YES : maybe?.[i] ? IF_NEEDED : NO) };
 }
 
 // Slots are indexed day-major: index = dayIndex * slotsPerDay + slotIndex.

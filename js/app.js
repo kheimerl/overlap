@@ -304,10 +304,14 @@ async function startPainting(page, me) {
   const root = $('mine-grid');
   const cells = buildGrid(root, page);
   if (page.meta.tz !== viewerTz) cells.forEach((c, i) => { c.title = slotInfo(page, i).text; });
-  const paint = () => cells.forEach((c, i) => c.classList.toggle('on', !!page.me.bits[i]));
+  const paint = () => cells.forEach((c, i) => {
+    c.classList.toggle('on', page.me.bits[i] === core.YES);
+    c.classList.toggle('maybe', page.me.bits[i] === core.IF_NEEDED);
+  });
   paint();
 
   // Rectangle selection like when2meet: drag from one corner to the other.
+  // The rectangle takes the state after the starting cell's: available -> if needed -> unavailable.
   let drag = null;
   const applyDrag = () => {
     const a = slotInfo(page, drag.from), b = slotInfo(page, drag.to);
@@ -323,7 +327,7 @@ async function startPainting(page, me) {
     if (i === null) return;
     e.preventDefault();
     root.setPointerCapture(e.pointerId);
-    drag = { from: i, to: i, value: page.me.bits[i] ? 0 : 1, base: page.me.bits.slice() };
+    drag = { from: i, to: i, value: (page.me.bits[i] + 1) % 3, base: page.me.bits.slice() };
     applyDrag();
   });
   root.addEventListener('pointermove', e => {
@@ -365,7 +369,7 @@ async function flushSave(page) {
   const bits = page.me.bits.slice();
   const name = $('me-name').textContent;
   try {
-    await api.respond(page.ev, page.me.psecret, { name, avail: core.packBits(bits) });
+    await api.respond(page.ev, page.me.psecret, { name, ...core.encodeAvail(bits) });
     save.backoff = 0;
     const mine = { pid: page.me.pid, name, avail: bits };
     const i = page.responses.findIndex(r => r.pid === page.me.pid);
@@ -420,16 +424,22 @@ function setupGroup(page) {
 }
 
 function counts(page) {
-  const c = new Array(page.n).fill(0);
-  for (const r of page.responses) r.avail.forEach((v, i) => { c[i] += v; });
-  return c;
+  const yes = new Array(page.n).fill(0), maybe = new Array(page.n).fill(0);
+  for (const r of page.responses) {
+    r.avail.forEach((v, i) => {
+      if (v === core.YES) yes[i]++;
+      else if (v === core.IF_NEEDED) maybe[i]++;
+    });
+  }
+  return { yes, maybe };
 }
 
 function renderGroup(page) {
   const total = page.responses.length;
   const c = counts(page);
+  // "If needed" counts as half toward the shading.
   page.groupCells.forEach((cell, i) => {
-    const pct = total ? Math.round((c[i] / total) * 100) : 0;
+    const pct = total ? Math.round(((c.yes[i] + c.maybe[i] / 2) / total) * 100) : 0;
     cell.style.background = pct ? `color-mix(in oklab, var(--avail) ${pct}%, var(--cell))` : '';
   });
 
@@ -454,6 +464,7 @@ function renderGroup(page) {
       legend.append(sw);
     }
     legend.append(`${total}/${total} available`);
+    if (page.responses.some(r => r.avail.includes(core.IF_NEEDED))) legend.append(' · "if needed" counts as half');
   }
 
   renderBest(page, c, total);
@@ -465,25 +476,30 @@ function showDetail(page, i) {
   if (page.active != null) page.groupCells[page.active]?.classList.remove('active');
   page.active = i;
   page.groupCells[i].classList.add('active');
-  const yes = page.responses.filter(r => r.avail[i]).map(r => r.name).sort();
-  const no = page.responses.filter(r => !r.avail[i]).map(r => r.name).sort();
+  const names = state => page.responses.filter(r => r.avail[i] === state).map(r => r.name).sort();
+  const yes = names(core.YES), maybe = names(core.IF_NEEDED), no = names(core.NO);
   $('detail').replaceChildren(
     el('p', {}, el('strong', { textContent: slotInfo(page, i).text })),
     el('p', { textContent: `Available (${yes.length}/${page.responses.length}): ${yes.join(', ') || 'nobody'}` }),
+    ...(maybe.length ? [el('p', { textContent: `If needed: ${maybe.join(', ')}` })] : []),
     ...(no.length ? [el('p', { className: 'muted', textContent: `Unavailable: ${no.join(', ')}` })] : []),
   );
 }
 
-// Lists the contiguous blocks where the most people are free.
+// Lists the contiguous blocks where the most people can make it, preferring
+// slots where fewer of them are only "if needed".
 function renderBest(page, c, total) {
   const root = $('best');
-  const max = Math.max(0, ...c);
-  if (!total || !max) return root.replaceChildren();
+  const able = c.yes.map((y, i) => y + c.maybe[i]);
+  const maxAble = Math.max(0, ...able);
+  if (!total || !maxAble) return root.replaceChildren();
+  const maxYes = Math.max(...c.yes.filter((_, i) => able[i] === maxAble));
+  const best = i => able[i] === maxAble && c.yes[i] === maxYes;
   const runs = [];
   page.meta.dates.forEach((date, day) => {
     let startSlot = null;
     for (let s = 0; s <= page.spd; s++) {
-      const hit = s < page.spd && c[day * page.spd + s] === max;
+      const hit = s < page.spd && best(day * page.spd + s);
       if (hit && startSlot === null) startSlot = s;
       if (!hit && startSlot !== null) {
         runs.push({ date, from: page.meta.start + startSlot * page.meta.step, to: page.meta.start + s * page.meta.step });
@@ -493,8 +509,14 @@ function renderBest(page, c, total) {
   });
   runs.sort((a, b) => (b.to - b.from) - (a.to - a.from));
   root.replaceChildren(
-    el('h2', { textContent: max === total ? 'Everyone is free' : `Best times (${max} of ${total} free)` }),
+    el('h2', { textContent: bestHeading(maxAble, maxAble - maxYes, total) }),
     el('ul', {}, ...runs.slice(0, 5).map(r =>
       el('li', { textContent: `${core.formatDate(r.date)}, ${core.formatMinutes(r.from)} – ${core.formatMinutes(r.to)}` }))),
   );
+}
+
+function bestHeading(able, ifNeeded, total) {
+  const caveat = ifNeeded ? `, ${ifNeeded} only if needed` : '';
+  if (able === total) return ifNeeded ? `Everyone can make it (${ifNeeded} only if needed)` : 'Everyone is free';
+  return `Best times (${able} of ${total} can make it${caveat})`;
 }
