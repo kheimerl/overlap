@@ -53,7 +53,10 @@ function fail(message) {
 
 window.addEventListener('hashchange', () => location.reload());
 const key = location.hash.slice(1);
-if (!API_URL) fail('This site has no backend configured yet. Set DEPLOYED_API_URL in js/config.js.');
+// WebCrypto only exists on secure origins, and GitHub Pages will also serve plain HTTP.
+if (!globalThis.crypto?.subtle && location.protocol === 'http:') location.replace('https:' + location.href.slice(5));
+else if (!globalThis.crypto?.subtle) fail('This browser does not support the encryption this site needs.');
+else if (!API_URL) fail('This site has no backend configured yet. Set DEPLOYED_API_URL in js/config.js.');
 else if (key) showEvent(key);
 else showCreate();
 
