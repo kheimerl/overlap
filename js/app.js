@@ -105,7 +105,7 @@ function showCreate() {
     if (meta.end <= meta.start) return setStatus(status, '"No later than" must be after "No earlier than".', true);
 
     $('create-btn').disabled = true;
-    setStatus(status, 'Creating… (a second or two of anti-spam work)');
+    setStatus(status, 'Creating…');
     try {
       core.validateMeta(meta);
       const key = core.newEventKey();

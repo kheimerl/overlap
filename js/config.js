@@ -6,4 +6,4 @@ const LOCAL = ['localhost', '127.0.0.1'].includes(location.hostname);
 export const API_URL = LOCAL ? `http://${location.hostname}:8788/` : DEPLOYED_API_URL;
 
 // Must match CONFIG.POW_BITS in Code.gs. Each extra bit doubles event-creation time.
-export const POW_BITS = 16;
+export const POW_BITS = 12;

@@ -14,7 +14,7 @@ An ad-free when2meet. It's a static site (GitHub Pages) with a Google Apps Scrip
 
 Abuse controls in `apps-script/Code.gs`:
 
-- **Event creation** costs a proof-of-work (16 bits; about 0.5 s in Chrome, set by `POW_BITS`).
+- **Event creation** costs a small proof-of-work (12 bits: about 20 ms on a desktop, about 50 ms on a phone; set by `POW_BITS`). It mainly slows down casual scripting; the rate limits are the main control.
 - **Rate limits:** 30 new events per minute; 300 response saves per minute overall and 90 per event. A request without a valid link token is rejected before it takes the lock or counts toward any limit, so strangers can't use up everyone else's budget.
 - **Caps:** 100 participants per event, 5,000 events and 20,000 responses in total, plus size limits on every field.
 - **Input checks:** only base64url input is accepted, which also rules out formula injection.
@@ -22,7 +22,7 @@ Abuse controls in `apps-script/Code.gs`:
 
 ### What these controls don't stop
 
-The proof-of-work only slows down a browser; a script running native code solves 16 bits in milliseconds. A determined attacker can therefore create events (and respond to them) at the rate limits. That fills the 5,000-event cap in a few hours. The junk events count as active, so they don't expire for 90 days, and the service stays read-only until you clear the Sheet by hand. Existing events keep working, but nobody can create new ones.
+The proof-of-work is deliberately light; a script running native code solves it almost instantly. A determined attacker can therefore create events (and respond to them) at the rate limits. That fills the 5,000-event cap in a few hours. The junk events count as active, so they don't expire for 90 days, and the service stays read-only until you clear the Sheet by hand. Existing events keep working, but nobody can create new ones.
 
 A flood of requests can also use up your Apps Script quota (about 30 simultaneous executions per account), since every request runs the script. That causes downtime until the flood stops.
 
